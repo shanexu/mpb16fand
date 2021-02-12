@@ -11,10 +11,10 @@ import (
 	"github.com/shanexu/mbp16fanctl/pkg/sensors"
 )
 
-type Mbpfand struct {
+type Mbp16fand struct {
 }
 
-func (m *Mbpfand) getTemp(request *restful.Request, response *restful.Response) {
+func (m *Mbp16fand) getTemp(request *restful.Request, response *restful.Response) {
 	name := request.PathParameter("temp-name")
 	s, ok := sensors.TempSensors[name]
 	if !ok {
@@ -24,15 +24,15 @@ func (m *Mbpfand) getTemp(request *restful.Request, response *restful.Response) 
 	}
 }
 
-func (m *Mbpfand) findTemps(request *restful.Request, response *restful.Response) {
+func (m *Mbp16fand) findTemps(request *restful.Request, response *restful.Response) {
 	response.WriteEntity(sensors.TempSensors)
 }
 
-func (m *Mbpfand) findFans(request *restful.Request, response *restful.Response) {
+func (m *Mbp16fand) findFans(request *restful.Request, response *restful.Response) {
 	response.WriteEntity(sensors.FanSensors)
 }
 
-func (m *Mbpfand) getFan(request *restful.Request, response *restful.Response) {
+func (m *Mbp16fand) getFan(request *restful.Request, response *restful.Response) {
 	name := request.PathParameter("fan-name")
 	s, ok := sensors.FanSensors[name]
 	if !ok {
@@ -42,7 +42,7 @@ func (m *Mbpfand) getFan(request *restful.Request, response *restful.Response) {
 	}
 }
 
-func (m *Mbpfand) WebService() *restful.WebService {
+func (m *Mbp16fand) WebService() *restful.WebService {
 	ws := new(restful.WebService)
 	ws.
 		Path("/temp").
@@ -82,7 +82,7 @@ func (m *Mbpfand) WebService() *restful.WebService {
 }
 
 func main() {
-	m := &Mbpfand{}
+	m := &Mbp16fand{}
 	restful.DefaultContainer.Add(m.WebService())
 
 	config := restfulspec.Config{
