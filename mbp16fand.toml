@@ -1,0 +1,14 @@
+active_profile = "p1"
+
+[profiles.default]
+manual = false
+
+[profiles.full]
+manual = true
+speed = -1
+
+[profiles.p1]
+manual = true
+speed = 0
+high_temp = 80000
+low_temp = 40000

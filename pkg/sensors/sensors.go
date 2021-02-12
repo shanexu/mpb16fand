@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,6 +38,7 @@ type FanSensor struct {
 	Output     int
 	Safe       int
 	CatAt      time.Time
+	Profile    *Profile
 }
 
 func (s *TempSensor) UpdateValue(t time.Time) error {
@@ -80,6 +82,11 @@ func readIntFromFile(path string) (int, error) {
 		return 0, err
 	}
 	return strconv.Atoi(strings.Trim(string(b), "\n"))
+}
+
+func writeIntToFile(i int, path string) error {
+	v := strconv.Itoa(i)
+	return ioutil.WriteFile(path, []byte(v), 0644)
 }
 
 func NewFanSensor(labelPath string) (*FanSensor, error) {
@@ -168,7 +175,69 @@ func (s *FanSensor) UpdateValue(t time.Time) error {
 	}
 	s.Safe = safe
 	s.CatAt = t
+	if s.Profile != nil {
+		p := s.Profile
+		if bool2int(p.Manual) != manual {
+			manual = bool2int(p.Manual)
+			if err := writeIntToFile(manual, s.ManualPath); err != nil {
+				return err
+			}
+			s.Manual = manual
+		}
+		if p.Manual {
+			if p.Speed == 0 {
+				core := TempSensors["Package id 0"]
+				output = int(math.Ceil(p.K*float64(core.Value) + p.C))
+			} else {
+				output = p.Speed
+				if output < 0 {
+					output = s.Max
+				}
+			}
+
+			if output > s.Max {
+				output = s.Max
+			}
+			if output < s.Min {
+				output = s.Min
+			}
+			if s.Output != output {
+				log.Println(s.Name, output)
+				if err := writeIntToFile(output, s.OutputPath); err != nil {
+					return err
+				}
+				s.Output = output
+			}
+
+		}
+	}
 	return nil
+}
+
+type FanState struct {
+	Manual *int
+	Output *int
+}
+
+func (s *FanSensor) ApplyState(st FanState) error {
+	if st.Manual != nil {
+		if err := writeIntToFile(*st.Manual, s.ManualPath); err != nil {
+			return err
+		}
+	}
+	if st.Output != nil {
+		if err := writeIntToFile(*st.Output, s.OutputPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type Profile struct {
+	Manual bool
+	Speed  int
+	K      float64
+	C      float64
 }
 
 var ErrDuplicatedName = errors.New("duplicated name")
@@ -192,6 +261,7 @@ func addFanSensor(s *FanSensor) error {
 var TempSensors map[string]*TempSensor = make(map[string]*TempSensor)
 
 var FanSensors map[string]*FanSensor = make(map[string]*FanSensor)
+var profileChanges chan struct{} = make(chan struct{})
 
 func init() {
 	filepath.Walk("/sys/devices", func(path string, info os.FileInfo, err error) error {
@@ -230,11 +300,42 @@ func init() {
 					log.Println("update value for", name, "failed", "with error", err)
 				}
 			}
-			for name, sensor := range FanSensors {
-				if err := sensor.UpdateValue(t); err != nil {
-					log.Println("update value for", name, "failed", "with error", err)
-				}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(time.Second * 5)
+		for {
+			select {
+			case t := <-ticker.C:
+				updateAllFanSensors(t)
+			case <-profileChanges:
+				t := time.Now()
+				updateAllFanSensors(t)
 			}
 		}
 	}()
+}
+
+func updateAllFanSensors(t time.Time) {
+	for name, sensor := range FanSensors {
+		if err := sensor.UpdateValue(t); err != nil {
+			log.Println("update value for", name, "failed", "with error", err)
+		}
+	}
+}
+
+func NotifyFanSensors() {
+	profileChanges <- struct{}{}
+}
+
+func int2bool(i int) bool {
+	return i != 0
+}
+
+func bool2int(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

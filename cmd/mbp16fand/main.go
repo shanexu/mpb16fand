@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
 	"github.com/go-openapi/spec"
+	"github.com/pelletier/go-toml"
 
+	"github.com/shanexu/mbp16fanctl/pkg/config"
 	"github.com/shanexu/mbp16fanctl/pkg/sensors"
 )
 
@@ -42,7 +45,8 @@ func (m *Mbp16fand) getFan(request *restful.Request, response *restful.Response)
 	}
 }
 
-func (m *Mbp16fand) WebService() *restful.WebService {
+func (m *Mbp16fand) WebService() []*restful.WebService {
+	var wss []*restful.WebService
 	ws := new(restful.WebService)
 	ws.
 		Path("/temp").
@@ -61,7 +65,8 @@ func (m *Mbp16fand) WebService() *restful.WebService {
 		Metadata(restfulspec.KeyOpenAPITags, []string{"temp"}).
 		Writes(sensors.TempSensor{}).
 		Returns(http.StatusOK, "OK", sensors.TempSensor{}))
-
+	wss = append(wss, ws)
+	ws = new(restful.WebService)
 	ws.Path("/fan").
 		Consumes(restful.MIME_JSON, restful.MIME_JSON).
 		Produces(restful.MIME_JSON, restful.MIME_JSON)
@@ -78,21 +83,56 @@ func (m *Mbp16fand) WebService() *restful.WebService {
 		Metadata(restfulspec.KeyOpenAPITags, []string{"fan"}).
 		Writes(sensors.FanSensor{}).
 		Returns(http.StatusOK, "OK", sensors.FanSensor{}))
-	return ws
+	wss = append(wss, ws)
+	return wss
 }
 
 func main() {
 	m := &Mbp16fand{}
-	restful.DefaultContainer.Add(m.WebService())
+	wss := m.WebService()
+	for _, ws := range wss {
+		restful.DefaultContainer.Add(ws)
+	}
 
-	config := restfulspec.Config{
+	cfg := restfulspec.Config{
 		WebServices:                   restful.RegisteredWebServices(), // you control what services are visible
 		APIPath:                       "/apidocs.json",
 		PostBuildSwaggerObjectHandler: enrichSwaggerObject,
 	}
-	restful.DefaultContainer.Add(restfulspec.NewOpenAPIService(config))
+	restful.DefaultContainer.Add(restfulspec.NewOpenAPIService(cfg))
 	http.Handle("/apidocs/", http.StripPrefix("/apidocs/", http.FileServer(http.Dir("./swagger-ui"))))
 
+	t, err := toml.LoadFile("mbp16fand.toml")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(t)
+
+	c := config.Config{}
+	t.Unmarshal(&c)
+	profile, ok := c.Profiles[c.ActiveProfile]
+	if !ok {
+		panic(fmt.Sprintf("no such profile %q", c.ActiveProfile))
+	}
+	for _, s := range sensors.FanSensors {
+		p := &sensors.Profile{
+			Manual: profile.Manual,
+			Speed:  profile.Speed,
+		}
+		if profile.Speed == 0 && profile.Manual {
+			if profile.HighTemp >= 0 && profile.LowTemp >= 0 && profile.HighTemp > profile.LowTemp {
+				k := float64(s.Max-s.Min) / float64(profile.HighTemp-profile.LowTemp)
+				c := float64(s.Min) - k*float64(profile.LowTemp)
+				p.K = k
+				p.C = c
+			} else {
+				panic("high temp and low temp not valid")
+			}
+		}
+
+		s.Profile = p
+	}
+	sensors.NotifyFanSensors()
 	log.Printf("start listening on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
