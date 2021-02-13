@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
@@ -133,8 +134,11 @@ func main() {
 		s.Profile = p
 	}
 	sensors.NotifyFanSensors()
-	log.Printf("start listening on localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	l, err := net.Listen("unix", "/var/run/mbp16fand.sock")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Println(http.Serve(l, nil))
 }
 
 func enrichSwaggerObject(swo *spec.Swagger) {
