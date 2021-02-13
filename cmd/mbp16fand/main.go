@@ -5,6 +5,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	restfulspec "github.com/emicklei/go-restful-openapi/v2"
 	"github.com/emicklei/go-restful/v3"
@@ -130,7 +133,6 @@ func main() {
 				panic("high temp and low temp not valid")
 			}
 		}
-
 		s.Profile = p
 	}
 	sensors.NotifyFanSensors()
@@ -138,7 +140,17 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println(http.Serve(l, nil))
+	go func() {
+		log.Println(http.Serve(l, nil))
+	}()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
+	log.Println("close listener")
+	l.Close()
+	log.Println("close sensors")
+	sensors.Close()
+	log.Println("Byebye!")
 }
 
 func enrichSwaggerObject(swo *spec.Swagger) {

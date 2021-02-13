@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -182,6 +183,7 @@ func (s *FanSensor) UpdateValue(t time.Time) error {
 			if err := writeIntToFile(manual, s.ManualPath); err != nil {
 				return err
 			}
+			log.Println("set", s.Name, "manual", manual)
 			s.Manual = manual
 		}
 		if p.Manual {
@@ -202,7 +204,7 @@ func (s *FanSensor) UpdateValue(t time.Time) error {
 				output = s.Min
 			}
 			if s.Output != output {
-				log.Println(s.Name, output)
+				log.Println("set", s.Name, "output", output)
 				if err := writeIntToFile(output, s.OutputPath); err != nil {
 					return err
 				}
@@ -291,19 +293,27 @@ func init() {
 	log.Println("collect", len(TempSensors), "temp sensors")
 	log.Println("collect", len(FanSensors), "fan sensors")
 
+	wg.Add(2)
+
 	go func() {
+		defer wg.Done()
 		ticker := time.NewTicker(time.Second * 5)
 		for {
-			t := <-ticker.C
-			for name, sensor := range TempSensors {
-				if err := sensor.UpdateValue(t); err != nil {
-					log.Println("update value for", name, "failed", "with error", err)
+			select {
+			case t := <-ticker.C:
+				for name, sensor := range TempSensors {
+					if err := sensor.UpdateValue(t); err != nil {
+						log.Println("update value for", name, "failed", "with error", err)
+					}
 				}
+			case <-done:
+				return
 			}
 		}
 	}()
 
 	go func() {
+		defer wg.Done()
 		ticker := time.NewTicker(time.Second * 5)
 		for {
 			select {
@@ -312,6 +322,15 @@ func init() {
 			case <-profileChanges:
 				t := time.Now()
 				updateAllFanSensors(t)
+			case <-done:
+				t := time.Now()
+				for _, s := range FanSensors {
+					s.Profile = &Profile{
+						Manual: false,
+					}
+				}
+				updateAllFanSensors(t)
+				return
 			}
 		}
 	}()
@@ -338,4 +357,12 @@ func bool2int(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+var done = make(chan struct{})
+var wg sync.WaitGroup
+
+func Close() {
+	close(done)
+	wg.Wait()
 }
