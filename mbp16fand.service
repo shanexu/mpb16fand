@@ -1,0 +1,12 @@
+[Unit]
+Description=MacbookPro 16,1 fan control
+After=syslog.target
+After=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/home/shane/go/bin/mbp16fand -f
+PIDFile=/var/run/mbp16fand.pid
+
+[Install]
+WantedBy=sysinit.target
