@@ -102,7 +102,7 @@ func main() {
 	restful.DefaultContainer.Add(restfulspec.NewOpenAPIService(cfg))
 	http.Handle("/apidocs/", http.StripPrefix("/apidocs/", http.FileServer(http.Dir("./swagger-ui"))))
 
-	t, err := toml.LoadFile("mbp16fand.toml")
+	t, err := toml.LoadFile("/etc/mbp16fand/mbp16fand.toml")
 	if err != nil {
 		panic(err)
 	}
